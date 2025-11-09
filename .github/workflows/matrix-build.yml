@@ -1,0 +1,130 @@
+name: Multi-Platform Matrix Build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  matrix-build:
+    name: Build on ${{ matrix.os }} with Node ${{ matrix.node-version }}
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node-version: [18, 20]
+        include:
+          # Add a specific configuration
+          - os: ubuntu-latest
+            node-version: 16
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      
+      - name: matrix-1b08871
+        run: |
+          echo "Building for ${{ matrix.os }} with Node.js ${{ matrix.node-version }}"
+          echo "Matrix configuration: OS=${{ matrix.os }}, Node=${{ matrix.node-version }}"
+      
+      - name: Create build directory
+        run: mkdir -p build
+      
+      - name: Generate build artifact
+        run: |
+          echo "Build Information" > build/output.txt
+          echo "==================" >> build/output.txt
+          echo "Operating System: ${{ matrix.os }}" >> build/output.txt
+          echo "Node Version: ${{ matrix.node-version }}" >> build/output.txt
+          echo "Build Time: $(date)" >> build/output.txt
+          echo "GitHub Actor: ${{ github.actor }}" >> build/output.txt
+          echo "Commit SHA: ${{ github.sha }}" >> build/output.txt
+          echo "" >> build/output.txt
+          echo "Node Info:" >> build/output.txt
+          node --version >> build/output.txt
+          npm --version >> build/output.txt
+        shell: bash
+      
+      - name: Create JSON metadata
+        run: |
+          cat > build/metadata.json << EOF
+          {
+            "os": "${{ matrix.os }}",
+            "nodeVersion": "${{ matrix.node-version }}",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "commit": "${{ github.sha }}",
+            "branch": "${{ github.ref_name }}",
+            "buildNumber": "${{ github.run_number }}"
+          }
+          EOF
+        shell: bash
+      
+      - name: Display artifact contents
+        run: |
+          echo "=== output.txt ==="
+          cat build/output.txt
+          echo ""
+          echo "=== metadata.json ==="
+          cat build/metadata.json
+        shell: bash
+      
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-1b08871-${{ matrix.os }}-node${{ matrix.node-version }}
+          path: build/
+          retention-days: 30
+          if-no-files-found: error
+  
+  # Summary job that runs after all matrix jobs complete
+  build-summary:
+    name: Build Summary
+    needs: matrix-build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-artifacts
+      
+      - name: Display artifacts summary
+        run: |
+          echo "=== Build Artifacts Summary ==="
+          echo "Total artifacts collected:"
+          find all-artifacts -type f -name "*.txt" -o -name "*.json" | wc -l
+          echo ""
+          echo "Artifact details:"
+          find all-artifacts -type f | while read file; do
+            echo "---"
+            echo "File: $file"
+            echo "Size: $(wc -c < "$file") bytes"
+          done
+      
+      - name: Create combined summary
+        run: |
+          echo "# Matrix Build Summary" > summary.md
+          echo "" >> summary.md
+          echo "## Build Configurations" >> summary.md
+          echo "" >> summary.md
+          find all-artifacts -name "metadata.json" | while read json; do
+            echo "- **$(dirname "$json" | xargs basename)**" >> summary.md
+            cat "$json" >> summary.md
+            echo "" >> summary.md
+          done
+          
+          cat summary.md
+      
+      - name: Upload summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-1b08871-summary
+          path: summary.md
